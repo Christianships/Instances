@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import IOKit
 
 /// One process as seen by the kernel, with CPU and memory from the latest sample.
 struct Proc: Identifiable {
@@ -12,6 +13,8 @@ struct Proc: Identifiable {
     let memory: UInt64
     /// Percent of one core since the previous sample (can exceed 100).
     let cpu: Double
+    /// Percent of GPU time since the previous sample.
+    let gpu: Double
     /// False for processes we may not inspect (other users' without root).
     let hasStats: Bool
     var id: pid_t { pid }
@@ -21,6 +24,7 @@ struct Proc: Identifiable {
 /// keeps the previous cumulative CPU time per pid and diffs against it.
 final class Sampler {
     private var lastTimes: [pid_t: UInt64] = [:]
+    private var lastGPU: [pid_t: UInt64] = [:]
     private var lastStamp: UInt64 = 0
     private let numer: UInt64
     private let denom: UInt64
@@ -47,6 +51,7 @@ final class Sampler {
         let now = mach_absolute_time()
         let wall = lastStamp == 0 ? 0 : nanos(now - lastStamp)
         var times: [pid_t: UInt64] = [:]
+        let gpuTimes = gpuTimesByPid()
         var out: [Proc] = []
         out.reserveCapacity(Int(n))
 
@@ -86,6 +91,11 @@ final class Sampler {
                 }
             }
 
+            var gpu = 0.0
+            if wall > 0, let t = gpuTimes[pid], let prev = lastGPU[pid], t >= prev {
+                gpu = min(Double(t - prev) / Double(wall) * 100, 100)
+            }
+
             out.append(Proc(
                 pid: pid,
                 ppid: haveBSD ? pid_t(bsd.pbi_ppid) : 0,
@@ -94,11 +104,13 @@ final class Sampler {
                 path: path,
                 memory: haveRU ? ru.ri_phys_footprint : 0,
                 cpu: cpu,
+                gpu: gpu,
                 hasStats: haveRU
             ))
         }
 
         lastTimes = times
+        lastGPU = gpuTimes
         lastStamp = now
         return out
     }
@@ -119,4 +131,46 @@ func windowCounts() -> [pid_t: Int] {
         counts[pid, default: 0] += 1
     }
     return counts
+}
+
+/// Cumulative GPU time in nanoseconds per pid. Every process that talks to
+/// the GPU owns a user client under the IOAccelerator service, which records
+/// its creator ("pid 123, name") and per-queue accumulatedGPUTime. Readable
+/// without root, unlike powermetrics.
+func gpuTimesByPid() -> [pid_t: UInt64] {
+    var out: [pid_t: UInt64] = [:]
+    var services: io_iterator_t = 0
+    guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOAccelerator"), &services)
+            == KERN_SUCCESS else { return out }
+    defer { IOObjectRelease(services) }
+
+    var service = IOIteratorNext(services)
+    while service != 0 {
+        var children: io_iterator_t = 0
+        if IORegistryEntryGetChildIterator(service, kIOServicePlane, &children) == KERN_SUCCESS {
+            var child = IOIteratorNext(children)
+            while child != 0 {
+                if let creator = IORegistryEntryCreateCFProperty(child, "IOUserClientCreator" as CFString,
+                                                                 kCFAllocatorDefault, 0)?
+                        .takeRetainedValue() as? String,
+                   creator.hasPrefix("pid "),
+                   let pid = pid_t(creator.dropFirst(4).prefix { $0.isNumber }),
+                   let usage = IORegistryEntryCreateCFProperty(child, "AppUsage" as CFString,
+                                                               kCFAllocatorDefault, 0)?
+                        .takeRetainedValue() as? [[String: Any]] {
+                    for u in usage {
+                        if let t = (u["accumulatedGPUTime"] as? NSNumber)?.uint64Value {
+                            out[pid, default: 0] += t
+                        }
+                    }
+                }
+                IOObjectRelease(child)
+                child = IOIteratorNext(children)
+            }
+            IOObjectRelease(children)
+        }
+        IOObjectRelease(service)
+        service = IOIteratorNext(services)
+    }
+    return out
 }

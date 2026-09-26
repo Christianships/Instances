@@ -8,6 +8,7 @@ private let dim = Color.white.opacity(0.5)
 private let faint = Color.white.opacity(0.08)
 private let critical = Color(red: 1, green: 0.27, blue: 0.23)
 private let cpuWidth: CGFloat = 32
+private let gpuWidth: CGFloat = 32
 private let memWidth: CGFloat = 54
 
 private func mono(_ size: CGFloat, _ weight: NSFont.Weight = .regular) -> Font {
@@ -109,6 +110,7 @@ struct RootView: View {
         HStack(spacing: 0) {
             sortHeader("NAME", .name).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 26)
             sortHeader("CPU", .cpu).frame(width: cpuWidth, alignment: .trailing)
+            sortHeader("GPU", .gpu).frame(width: gpuWidth, alignment: .trailing)
             sortHeader("MEM", .memory).frame(width: memWidth, alignment: .trailing)
         }
         .padding(.leading, 12)
@@ -133,18 +135,20 @@ struct RootView: View {
         return q.isEmpty || name.localizedCaseInsensitiveContains(q) || String(pid).hasPrefix(q)
     }
 
-    private func sorted<T>(_ items: [T], name: (T) -> String, cpu: (T) -> Double, mem: (T) -> UInt64) -> [T] {
+    private func sorted<T>(_ items: [T], name: (T) -> String, cpu: (T) -> Double, gpu: (T) -> Double,
+                           mem: (T) -> UInt64) -> [T] {
         items.sorted {
             switch sort {
             case .memory: return mem($0) > mem($1)
             case .cpu: return cpu($0) > cpu($1)
+            case .gpu: return gpu($0) > gpu($1)
             case .name: return name($0).localizedCaseInsensitiveCompare(name($1)) == .orderedAscending
             }
         }
     }
 
     private var filteredApps: [AppEntry] {
-        sorted(store.apps.filter { matches($0.name, $0.pid) }, name: \.name, cpu: \.cpu, mem: \.memory)
+        sorted(store.apps.filter { matches($0.name, $0.pid) }, name: \.name, cpu: \.cpu, gpu: \.gpu, mem: \.memory)
     }
 
     @ViewBuilder private var appRows: some View {
@@ -162,7 +166,7 @@ struct RootView: View {
     private var filteredProcs: [Proc] {
         let uid = getuid()
         let list = store.procs.filter { (allUsers || $0.uid == uid) && matches($0.name, $0.pid) }
-        return sorted(list, name: \.name, cpu: \.cpu, mem: \.memory)
+        return sorted(list, name: \.name, cpu: \.cpu, gpu: \.gpu, mem: \.memory)
     }
 
     @ViewBuilder private var procRows: some View {
@@ -222,6 +226,7 @@ struct RootView: View {
 
 private struct Stats: View {
     let cpu: Double
+    let gpu: Double
     let memory: UInt64
     let hasStats: Bool
 
@@ -230,6 +235,10 @@ private struct Stats: View {
             .font(mono(10))
             .foregroundColor(cpu >= 90 ? critical : (cpu >= 1 ? fg : dim))
             .frame(width: cpuWidth, alignment: .trailing)
+        Text(hasStats ? formatCPU(gpu) : "--")
+            .font(mono(10))
+            .foregroundColor(gpu >= 90 ? critical : (gpu >= 1 ? fg : dim))
+            .frame(width: gpuWidth, alignment: .trailing)
         Text(hasStats ? formatMem(memory) : "--")
             .font(mono(10))
             .foregroundColor(hasStats ? fg : dim)
@@ -297,7 +306,7 @@ private struct AppRow: View {
                 Text(subtitle).font(mono(8.5)).foregroundColor(dim).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Stats(cpu: entry.cpu, memory: entry.memory, hasStats: true)
+            Stats(cpu: entry.cpu, gpu: entry.gpu, memory: entry.memory, hasStats: true)
         }
         .padding(.leading, 8)
         .padding(.trailing, 10)
@@ -368,7 +377,7 @@ private struct ProcRow: View {
                     .font(mono(8.5)).foregroundColor(dim).lineLimit(1).truncationMode(.middle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Stats(cpu: proc.cpu, memory: proc.memory, hasStats: proc.hasStats)
+            Stats(cpu: proc.cpu, gpu: proc.gpu, memory: proc.memory, hasStats: proc.hasStats)
         }
         .help(isProtected ? "Killing \(proc.name) would end your session" : "")
         .padding(.leading, 8)

@@ -10,6 +10,7 @@ struct AppEntry: Identifiable {
     let isBackground: Bool
     var memory: UInt64
     var cpu: Double
+    var gpu: Double
     var helpers: Int
     var windows: Int
     /// 1-based position among instances of the same app, when there are several.
@@ -19,7 +20,7 @@ struct AppEntry: Identifiable {
     var groupKey: String { app.bundleIdentifier ?? name }
 }
 
-enum SortKey { case memory, cpu, name }
+enum SortKey { case memory, cpu, gpu, name }
 
 /// Processes that take the session down with them. Their kill buttons are
 /// disabled rather than hidden so it is clear why nothing happens.
@@ -81,6 +82,7 @@ final class Store: ObservableObject {
             let own = byPid[pid]
             var mem = own?.memory ?? 0
             var cpu = own?.cpu ?? 0
+            var gpu = own?.gpu ?? 0
             var helpers = 0
             var seen: Set<pid_t> = [pid]
             var stack = children[pid] ?? []
@@ -90,6 +92,7 @@ final class Store: ObservableObject {
                 if let p = byPid[c] {
                     mem += p.memory
                     cpu += p.cpu
+                    gpu += p.gpu
                     helpers += 1
                 }
                 stack += children[c] ?? []
@@ -101,6 +104,7 @@ final class Store: ObservableObject {
                 isBackground: app.activationPolicy != .regular,
                 memory: mem,
                 cpu: cpu,
+                gpu: min(gpu, 100),
                 helpers: helpers,
                 windows: windows[pid] ?? 0
             ))
