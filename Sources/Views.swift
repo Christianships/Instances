@@ -7,6 +7,8 @@ private let fg = Color.white.opacity(0.95)
 private let dim = Color.white.opacity(0.5)
 private let faint = Color.white.opacity(0.08)
 private let critical = Color(red: 1, green: 0.27, blue: 0.23)
+private let cpuWidth: CGFloat = 32
+private let memWidth: CGFloat = 54
 
 private func mono(_ size: CGFloat, _ weight: NSFont.Weight = .regular) -> Font {
     let w = weight == .semibold ? 8 : 5
@@ -24,7 +26,7 @@ private let memFormatter: ByteCountFormatter = {
 }()
 
 private func formatMem(_ b: UInt64) -> String { memFormatter.string(fromByteCount: Int64(b)) }
-private func formatCPU(_ c: Double) -> String { c < 0.05 ? "0.0" : String(format: c >= 100 ? "%.0f" : "%.1f", c) }
+private func formatCPU(_ c: Double) -> String { c < 0.05 ? "0" : String(format: c >= 10 ? "%.0f" : "%.1f", c) }
 
 enum Tab { case apps, processes }
 
@@ -47,13 +49,13 @@ struct RootView: View {
                 LazyVStack(spacing: 1) {
                     if tab == .apps { appRows } else { procRows }
                 }
-                .padding(.horizontal, 6)
-                .padding(.bottom, 6)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
             }
             Rectangle().fill(faint).frame(height: 1)
             footer
         }
-        .frame(width: 480, height: 580)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .foregroundColor(fg)
         .onAppear { searchFocused = true }
         .onChange(of: store.openCount) { _ in
@@ -65,27 +67,28 @@ struct RootView: View {
     // MARK: header
 
     private var header: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundColor(dim).font(.system(size: 11))
-                TextField("Filter by name or pid", text: $query)
+                TextField("Filter", text: $query)
                     .textFieldStyle(.plain)
-                    .font(mono(12))
+                    .font(mono(11))
                     .focused($searchFocused)
                     .onSubmit(openFirstMatch)
             }
-            .padding(.horizontal, 9)
-            .frame(height: 26)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
             .background(RoundedRectangle(cornerRadius: 7).fill(faint))
 
             HStack(spacing: 2) {
                 tabButton("Apps", .apps, key: "1")
                 tabButton("Processes", .processes, key: "2")
             }
+            .frame(maxWidth: .infinity)
             .padding(2)
             .background(RoundedRectangle(cornerRadius: 8).fill(faint))
         }
-        .padding(10)
+        .padding(8)
     }
 
     private func tabButton(_ title: String, _ t: Tab, key: KeyEquivalent) -> some View {
@@ -93,8 +96,8 @@ struct RootView: View {
             Text(title)
                 .font(mono(11, tab == t ? .semibold : .regular))
                 .foregroundColor(tab == t ? fg : dim)
-                .padding(.horizontal, 9)
-                .frame(height: 22)
+                .frame(maxWidth: .infinity)
+                .frame(height: 20)
                 .background(RoundedRectangle(cornerRadius: 6).fill(tab == t ? Color.white.opacity(0.12) : .clear))
                 .contentShape(Rectangle())
         }
@@ -104,13 +107,13 @@ struct RootView: View {
 
     private var columns: some View {
         HStack(spacing: 0) {
-            sortHeader("NAME", .name).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 40)
-            sortHeader("CPU %", .cpu).frame(width: 56, alignment: .trailing)
-            sortHeader("MEMORY", .memory).frame(width: 76, alignment: .trailing)
-            Color.clear.frame(width: 38, height: 1)
+            sortHeader("NAME", .name).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 26)
+            sortHeader("CPU", .cpu).frame(width: cpuWidth, alignment: .trailing)
+            sortHeader("MEM", .memory).frame(width: memWidth, alignment: .trailing)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
+        .padding(.leading, 12)
+        .padding(.trailing, 14)
+        .padding(.top, 6)
         .padding(.bottom, 4)
     }
 
@@ -196,22 +199,22 @@ struct RootView: View {
     private var footer: some View {
         HStack(spacing: 10) {
             if let s = store.status {
-                Text(s).font(mono(10.5)).foregroundColor(fg).lineLimit(1)
+                Text(s).font(mono(9.5)).foregroundColor(fg).lineLimit(1).truncationMode(.middle)
             } else if tab == .apps {
-                Text("\(store.apps.count) apps · \(formatMem(store.apps.reduce(0) { $0 + $1.memory })) · \u{2325} force quit")
-                    .font(mono(10.5)).foregroundColor(dim)
+                Text("\(store.apps.count) apps · \(formatMem(store.apps.reduce(0) { $0 + $1.memory }))")
+                    .font(mono(9.5)).foregroundColor(dim)
             } else {
-                Text("\(filteredProcs.count) processes · \u{2325} SIGKILL")
-                    .font(mono(10.5)).foregroundColor(dim)
+                Text("\(filteredProcs.count) procs")
+                    .font(mono(9.5)).foregroundColor(dim)
             }
             Spacer()
             if tab == .processes {
-                Toggle(isOn: $allUsers) { Text("All users").font(mono(10.5)).foregroundColor(dim) }
+                Toggle(isOn: $allUsers) { Text("All users").font(mono(9.5)).foregroundColor(dim) }
                     .toggleStyle(.checkbox)
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 32)
+        .padding(.horizontal, 10)
+        .frame(height: 26)
     }
 }
 
@@ -224,36 +227,44 @@ private struct Stats: View {
 
     var body: some View {
         Text(hasStats ? formatCPU(cpu) : "--")
-            .font(mono(11.5))
+            .font(mono(10))
             .foregroundColor(cpu >= 90 ? critical : (cpu >= 1 ? fg : dim))
-            .frame(width: 56, alignment: .trailing)
+            .frame(width: cpuWidth, alignment: .trailing)
         Text(hasStats ? formatMem(memory) : "--")
-            .font(mono(11.5))
+            .font(mono(10))
             .foregroundColor(hasStats ? fg : dim)
-            .frame(width: 76, alignment: .trailing)
+            .frame(width: memWidth, alignment: .trailing)
     }
 }
 
-private struct KillButton: View {
+/// The row's icon, which turns into its quit / kill button while hovered --
+/// the panel is only as wide as the bar pill, so there is no spare column.
+private struct IconOrKill<Icon: View>: View {
+    let hover: Bool
     let force: Bool
-    let visible: Bool
     let disabled: Bool
     let help: String
     let action: () -> Void
+    @ViewBuilder let icon: () -> Icon
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: force ? "xmark.octagon.fill" : "xmark.circle.fill")
-                .font(.system(size: 14))
-                .foregroundColor(disabled ? dim.opacity(0.4) : (force ? critical : dim))
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
+        ZStack {
+            if hover && !disabled {
+                Button(action: action) {
+                    Image(systemName: force ? "xmark.octagon.fill" : "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(force ? critical : fg)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(help)
+            } else {
+                icon()
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-        .help(help)
-        .opacity(visible ? 1 : 0)
-        .frame(width: 38, alignment: .trailing)
+        .frame(width: 18, height: 18)
+        .padding(.trailing, 8)
     }
 }
 
@@ -264,33 +275,33 @@ private struct AppRow: View {
     @State private var hover = false
 
     private var subtitle: String {
-        var parts: [String] = ["pid \(entry.pid)"]
-        if entry.instanceCount > 1 { parts.append("instance \(entry.instance)/\(entry.instanceCount)") }
-        if entry.windows > 0 { parts.append("\(entry.windows) window\(entry.windows == 1 ? "" : "s")") }
-        if entry.helpers > 0 { parts.append("\(entry.helpers) helper\(entry.helpers == 1 ? "" : "s")") }
+        var parts: [String] = []
+        if entry.instanceCount > 1 { parts.append("#\(entry.instance)/\(entry.instanceCount)") }
+        if entry.windows > 0 { parts.append("\(entry.windows) win") }
+        if entry.helpers > 0 { parts.append("+\(entry.helpers)") }
+        parts.append("\(entry.pid)")
         if entry.app.isHidden { parts.append("hidden") }
         return parts.joined(separator: " · ")
     }
 
     var body: some View {
         HStack(spacing: 0) {
-            Image(nsImage: entry.app.icon ?? NSImage(named: NSImage.applicationIconName)!)
-                .resizable()
-                .frame(width: 22, height: 22)
-                .padding(.trailing, 10)
+            IconOrKill(hover: hover, force: store.optionDown, disabled: false,
+                       help: store.optionDown ? "Force quit" : "Quit",
+                       action: { store.quit(entry, force: store.optionDown) }) {
+                Image(nsImage: entry.app.icon ?? NSImage(named: NSImage.applicationIconName)!)
+                    .resizable()
+            }
             VStack(alignment: .leading, spacing: 1) {
-                Text(entry.name).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-                Text(subtitle).font(mono(9.5)).foregroundColor(dim).lineLimit(1)
+                Text(entry.name).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+                Text(subtitle).font(mono(8.5)).foregroundColor(dim).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Stats(cpu: entry.cpu, memory: entry.memory, hasStats: true)
-            KillButton(force: store.optionDown, visible: hover, disabled: false,
-                       help: store.optionDown ? "Force quit" : "Quit") {
-                store.quit(entry, force: store.optionDown)
-            }
         }
         .padding(.leading, 8)
-        .padding(.vertical, 5)
+        .padding(.trailing, 10)
+        .padding(.vertical, 4)
         .background(RoundedRectangle(cornerRadius: 7).fill(hover ? Color.white.opacity(0.07) : .clear))
         .contentShape(Rectangle())
         .onHover { hover = $0 }
@@ -342,30 +353,26 @@ private struct ProcRow: View {
     var body: some View {
         let isProtected = protectedNames.contains(proc.name)
         HStack(spacing: 0) {
-            Group {
+            IconOrKill(hover: hover, force: store.optionDown, disabled: isProtected,
+                       help: store.optionDown ? "SIGKILL" : "SIGTERM",
+                       action: { store.kill(proc, force: store.optionDown) }) {
                 if let icon = processIcon(proc.path) {
                     Image(nsImage: icon).resizable()
                 } else {
-                    Image(systemName: "terminal").font(.system(size: 11)).foregroundColor(dim)
+                    Image(systemName: "terminal").font(.system(size: 10)).foregroundColor(dim)
                 }
             }
-            .frame(width: 18, height: 18)
-            .padding(.leading, 2)
-            .padding(.trailing, 12)
             VStack(alignment: .leading, spacing: 1) {
-                Text(proc.name).font(mono(11.5)).lineLimit(1)
-                Text(proc.path.isEmpty ? "pid \(proc.pid)" : "pid \(proc.pid) · \(proc.path)")
-                    .font(mono(9)).foregroundColor(dim).lineLimit(1).truncationMode(.middle)
+                Text(proc.name).font(mono(10.5)).lineLimit(1)
+                Text(proc.path.isEmpty ? "\(proc.pid)" : "\(proc.pid) · \(proc.path)")
+                    .font(mono(8.5)).foregroundColor(dim).lineLimit(1).truncationMode(.middle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Stats(cpu: proc.cpu, memory: proc.memory, hasStats: proc.hasStats)
-            KillButton(force: store.optionDown, visible: hover, disabled: isProtected,
-                       help: isProtected ? "Killing \(proc.name) would end your session"
-                                         : (store.optionDown ? "SIGKILL" : "SIGTERM")) {
-                store.kill(proc, force: store.optionDown)
-            }
         }
+        .help(isProtected ? "Killing \(proc.name) would end your session" : "")
         .padding(.leading, 8)
+        .padding(.trailing, 10)
         .padding(.vertical, 3)
         .background(RoundedRectangle(cornerRadius: 7).fill(hover ? Color.white.opacity(0.07) : .clear))
         .contentShape(Rectangle())
