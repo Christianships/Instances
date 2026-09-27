@@ -6,6 +6,10 @@ import IOKit
 struct Proc: Identifiable {
     let pid: pid_t
     let ppid: pid_t
+    /// The app macOS holds accountable for this process. Differs from ppid for
+    /// XPC services an app starts, like WebKit's WebContent, GPU and Networking
+    /// processes, which launchd parents.
+    let responsible: pid_t
     let uid: uid_t
     let name: String
     let path: String
@@ -19,6 +23,12 @@ struct Proc: Identifiable {
     let hasStats: Bool
     var id: pid_t { pid }
 }
+
+/// Private but long-stable libsystem call (Activity Monitor relies on it).
+private typealias ResponsibleFn = @convention(c) (pid_t) -> pid_t
+private let responsiblePid: ResponsibleFn? = dlsym(UnsafeMutableRawPointer(bitPattern: -2),
+                                                  "responsibility_get_pid_responsible_for_pid")
+    .map { unsafeBitCast($0, to: ResponsibleFn.self) }
 
 /// Walks every pid via libproc. CPU usage needs two readings, so the sampler
 /// keeps the previous cumulative CPU time per pid and diffs against it.
@@ -99,6 +109,7 @@ final class Sampler {
             out.append(Proc(
                 pid: pid,
                 ppid: haveBSD ? pid_t(bsd.pbi_ppid) : 0,
+                responsible: responsiblePid?(pid) ?? pid,
                 uid: haveBSD ? bsd.pbi_uid : 0,
                 name: name,
                 path: path,

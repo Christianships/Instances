@@ -6,7 +6,7 @@ A small macOS panel that lists every running app and process, with what each one
 
 ## What it does
 
-**Apps tab.** Every running app, with its helpers and child processes counted in. A browser's renderers, a terminal's shells and an Electron app's helpers all go into its row, so the CPU, GPU and MEM numbers are what the app really costs. Each row shows:
+**Apps tab.** Every running app, with its helpers and child processes counted in. A browser's renderers, a terminal's shells and an Electron app's helpers all go into its row. So do the XPC services an app starts that aren't its children, like a WebKit browser's page, GPU and network processes, so the CPU, GPU and MEM numbers are what the app really costs. Each row shows:
 
 - window count (`3 win`), helper count (`+11`) and PID
 - instance numbers when an app runs more than once, e.g. two Ghostty windows as separate processes
@@ -44,7 +44,7 @@ The numbers refresh every 2 seconds while the panel is open, and sampling stops 
 | --- | --- |
 | `Sources/main.swift` | App delegate, borderless floating `NSPanel` with a HUD blur, placement under the pill, toggle on reopen, hide when it loses focus |
 | `Sources/Sampler.swift` | Lists every PID with `proc_listallpids`, reads name/parent/owner with `proc_pidinfo` and CPU time plus physical footprint with `proc_pid_rusage`. Gets CPU % by comparing two samples. Reads per-process GPU time from the `IOAccelerator` user clients in the IORegistry. Counts windows with `CGWindowListCopyWindowInfo` |
-| `Sources/Store.swift` | Links `NSRunningApplication`s to their child processes, numbers duplicate instances and handles quit/kill |
+| `Sources/Store.swift` | Links `NSRunningApplication`s to their child processes and to the processes macOS holds them responsible for, numbers duplicate instances and handles quit/kill |
 | `Sources/Views.swift` | SwiftUI UI: filter, tabs, sortable columns, rows, context menus |
 
 Memory is the physical footprint, the same figure as Activity Monitor's Memory column. CPU is a percent of one core, so it can go over 100. GPU is the share of GPU time since the last sample, 0–100, and needs no root, unlike `powermetrics`. WindowServer draws the whole screen, so it usually tops the GPU list in the Processes tab. No permissions are needed: window counts only use owner PIDs and bounds, not titles, so Screen Recording isn't required.

@@ -63,15 +63,26 @@ final class Store: ObservableObject {
         let procs = sampler.sample()
         var byPid: [pid_t: Proc] = [:]
         var children: [pid_t: [pid_t]] = [:]
+        var services: [pid_t: [pid_t]] = [:]
         for p in procs {
             byPid[p.pid] = p
             if p.ppid != p.pid { children[p.ppid, default: []].append(p.pid) }
+            if p.responsible > 0, p.responsible != p.pid { services[p.responsible, default: []].append(p.pid) }
         }
 
         let me = getpid()
-        let running = NSWorkspace.shared.runningApplications.filter {
+        let candidates = NSWorkspace.shared.runningApplications.filter {
             $0.processIdentifier != me && !$0.isTerminated && $0.activationPolicy != .prohibited
                 && !isSystemAgent($0)
+        }
+        // WebKit's page processes register as apps of their own ("Search Web
+        // Content"). Anything another running app is responsible for belongs
+        // in that app's row, not a row of its own.
+        let candidatePids = Set(candidates.map(\.processIdentifier))
+        let running = candidates.filter {
+            let pid = $0.processIdentifier
+            guard let owner = byPid[pid]?.responsible, owner != pid else { return true }
+            return !candidatePids.contains(owner)
         }
         let appPids = Set(running.map(\.processIdentifier))
         let windows = windowCounts()
@@ -85,7 +96,9 @@ final class Store: ObservableObject {
             var gpu = own?.gpu ?? 0
             var helpers = 0
             var seen: Set<pid_t> = [pid]
-            var stack = children[pid] ?? []
+            // Children, plus the XPC services it is responsible for (a WebKit
+            // browser's pages run in those, parented by launchd, not the app).
+            var stack = (children[pid] ?? []) + (services[pid] ?? [])
             while let c = stack.popLast() {
                 // Another app launched from this one keeps its own row.
                 guard seen.insert(c).inserted, !appPids.contains(c) else { continue }
