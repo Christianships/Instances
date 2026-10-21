@@ -35,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
+        // No AppKit fade in or out: the panel appears and vanishes on the click.
+        panel.animationBehavior = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.delegate = self
 
@@ -112,10 +114,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         followTimer?.invalidate()
         followTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.place() }
         store.optionDown = NSEvent.modifierFlags.contains(.option)
-        store.start()
         store.openCount += 1
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+        // Sampling every process takes a moment, so the panel goes up first
+        // with the last reading and refreshes on the next pass of the run loop.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.panel.isVisible else { return }
+            self.store.start()
+        }
     }
 
     func hide() {
