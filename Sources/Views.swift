@@ -7,7 +7,7 @@ private let fg = Color.white.opacity(0.95)
 private let dim = Color.white.opacity(0.5)
 private let faint = Color.white.opacity(0.08)
 private let critical = Color(red: 1, green: 0.27, blue: 0.23)
-private let cpuWidth: CGFloat = 32
+private let cpuWidth: CGFloat = 38
 private let gpuWidth: CGFloat = 32
 private let memWidth: CGFloat = 54
 
@@ -28,6 +28,19 @@ private let memFormatter: ByteCountFormatter = {
 
 private func formatMem(_ b: UInt64) -> String { memFormatter.string(fromByteCount: Int64(b)) }
 private func formatCPU(_ c: Double) -> String { c < 0.05 ? "0" : String(format: c >= 10 ? "%.0f" : "%.1f", c) }
+
+/// The sampler measures CPU like Activity Monitor: percent of ONE core, so a
+/// busy app reads 250 on a 10-core Mac. The CPU column shows share of the
+/// WHOLE Mac instead -- the same scale as the bar's CPU pill -- so 25% means a
+/// quarter of the machine and the rows add up to roughly the bar's number.
+private let cores = Double(max(1, ProcessInfo.processInfo.activeProcessorCount))
+private func machineShare(_ perCore: Double) -> Double { perCore / cores }
+private func formatShare(_ s: Double) -> String {
+    s < 0.05 ? "0%" : String(format: s >= 10 ? "%.0f%%" : "%.1f%%", s)
+}
+/// One full core's worth. A single app holding this much is either doing heavy
+/// work or stuck in a loop -- the same point the old "90 of one core" red meant.
+private let cpuHot = 100 / cores
 
 enum Tab { case apps, processes }
 
@@ -205,7 +218,7 @@ struct RootView: View {
             if let s = store.status {
                 Text(s).font(mono(9.5)).foregroundColor(fg).lineLimit(1).truncationMode(.middle)
             } else if tab == .apps {
-                Text("\(store.apps.count) apps · \(formatMem(store.apps.reduce(0) { $0 + $1.memory }))")
+                Text("\(store.apps.count) apps · \(formatMem(store.apps.reduce(0) { $0 + $1.memory })) · \(formatShare(machineShare(store.apps.reduce(0) { $0 + $1.cpu }))) CPU")
                     .font(mono(9.5)).foregroundColor(dim)
             } else {
                 Text("\(filteredProcs.count) procs")
@@ -231,9 +244,10 @@ private struct Stats: View {
     let hasStats: Bool
 
     var body: some View {
-        Text(hasStats ? formatCPU(cpu) : "--")
+        let share = machineShare(cpu)
+        Text(hasStats ? formatShare(share) : "--")
             .font(mono(10))
-            .foregroundColor(cpu >= 90 ? critical : (cpu >= 1 ? fg : dim))
+            .foregroundColor(share >= cpuHot ? critical : (share >= 0.1 ? fg : dim))
             .frame(width: cpuWidth, alignment: .trailing)
         Text(hasStats ? formatCPU(gpu) : "--")
             .font(mono(10))
